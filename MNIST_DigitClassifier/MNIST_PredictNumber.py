@@ -3,15 +3,96 @@ import pygame
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import time
 
 from PIL import Image
 
 # Load the saved model generated with the Jupyter notebook (MNIST_DigitClassifier_v2.ipynb)
-digit_clf = joblib.load(r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\KNN_MNIST_ImageClassifier_v2")
-def guessNum (data):
+digit_clf = joblib.load(r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\KNN_MNIST_ImageClassifier_v3")
 
-    # Make predictions with the model, return the prediction and the associated prediction probability
-    return digit_clf.predict(data), digit_clf.predict_proba(data)
+# Guess the number given the individual digit data
+def guessNum (data):
+    prediction = ''
+    for x in data:
+
+        # Guess what the number is
+        pred = digit_clf.predict(x)[0]
+
+        # Append the prediction to the string
+        prediction+=str(pred)
+    return prediction
+
+# Center the individual images (the individual digits), add appropriate amount of pixels to the left and right of the "slice"
+# of the image
+def centerImage (image):
+
+    # Get the x dimension of the sliced digit image
+    size = len(image)
+
+    # To make the image more square which will make it closer to the training data, fill the image to the right and left
+    fill = (height - size) // 2
+
+    centerArr = np.zeros([fill, height], dtype = int)
+
+    # Image is now the original slice plus white space to the left and right (to make it square)
+    image = np.concatenate([centerArr, image, centerArr], axis = 0).tolist()
+    return image
+
+# Since while processing the individual slices/digits, we appended the columns of the image rather than the rows,
+# the image is vertically flipped and rotated 90 degrees counter clockwise, so we must unflip and rotate it back.
+# Also, we need to resize the image to 28x28 so we can feed it to our model
+def processSplit (images):
+    imageData = []
+    for ix in range (0, len(images)):
+
+        # Center/squarify the image and store it in a numpy array for easy manipulation
+        x = np.array(centerImage(images[ix]))
+
+        # Flip the sliced image vertically
+        x = np.flipud(x)
+
+        # Rotate the image 90 degrees clockwise
+        x = np.rot90(x, 1, (1, 0))
+
+        image = Image.fromarray(x)
+        # image.show()
+
+        # Resize the image
+        image = image.resize((28,28))
+
+        # Flatten the array (make it 1 by 784) so our model can interpret it
+        data = np.asarray(image).reshape(1, -1)
+
+        imageData.append(data)
+    return imageData
+
+# Finds the sections (by pixel columns) of the screen that contain drawn pixels and splits them into parts.
+# I.e. if there is a 3 and a 4 drawn by the user, it will split the parts of the screen containing the 3 and the 4.
+def splitDigits (originalImage):
+    images = []
+    imageSplit = []
+
+
+    for ix in range (0, originalImage.shape[1] - 1):
+        col = originalImage[ :, ix].copy()
+        nextCol = originalImage [:, ix + 1].copy()
+
+        # If the column contains non-black pixels, it contains a number, so append it to imageSplit (which represents
+        # each individual digit
+        if (col.sum() != 0):
+            imageSplit.append(col)
+
+            # If the column after the current one is black (contains all black pixels) or we've reached the edge of the screen, 
+            # then we've reached the end of the current digit slice, so add it to the images array.
+            if (nextCol.sum() == 0 or ix == originalImage.shape[1]-2):
+                images.append(np.array(imageSplit))
+
+                # Clear the image slice after appending it to images
+                imageSplit.clear()
+
+    # Process these image slices, make them square and resize them to 28x28, which we will feed into our model             
+    images = processSplit(images)
+    return images
 
 # Main loop for the graphics for the number drawing
 def main():
@@ -21,49 +102,34 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            
-            # If the user presses ENTER/RETURN, then take a screenshot of the current image, resize it to a 28x28 image,
-            # and then convert it to an 1 by 784 (28 * 28) flattened array containing the intensities of each pixel in the
-            # image drawn by the user.
+
+            # If the user presses ENTER/RETURN, then they want model to guess the number
             if (keys[pygame.K_RETURN] == True):
-                    pygame.image.save(screen, r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\number.jpeg")
-                    image = Image.open(r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\number.jpeg")
-                    image = image.resize((28, 28), Image.ANTIALIAS)
+                    start_time = time.time()
+                    # Save a screenshot of the current screen
+                    pygame.image.save(screen, r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\number.png")
+                    image = Image.open(r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\number.png")
+                    image.save(r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\number.png")
 
-                    ## Save the image to see what the resized image looks like before any preprocessing
-                    # image.save(r"C:\Users\408aa\Desktop\Python\DataScience\MNIST_DigitClassifier\number.jpeg")
-                    image_arr = np.array(image)
-                    data = [[]]
-                    for x in image_arr:
-                        for z in x:
+                    # Save array representation of whole screen
+                    image_arr = np.asarray(image).reshape((height*height), 3)
 
-                            # Pygame's drawing combined with resizing results in lighter final image, 
-                            # artificially increase the intensity of the image (by 70), so it will produce a better prediction result.
-                            intensity = (int(np.mean(z))) + 70
-                            
-                            # Remove the noise in the resized image, if the pixel intensity is still less than 85 (15 originally), 
-                            # then just make it a pixel with 0 intensity.
-                            if (intensity < 85):
-                                intensity = 0
-                            else:
-
-                            # If the intensity is greater than 255 (the most intense value of a pixel), then just set it to 255
-                            # this will make it more similar to the training data and closer to the data points in the training data
-                            # (remember the model is trained with a KNN classifier)
-                                if (intensity > 255):   
-                                    intensity = 255
-                            data[0].append(intensity)
-                    prediction, pred_accuracy = guessNum(data)
-                    pred_accuracy = np.array(pred_accuracy).round(3)
-                    print (pred_accuracy)
-                    print ("Predicted number: " + str(prediction))
-
-                    ## Produce a gray scaled image of the translation (after denoising and intensifying) on a Pyplot for easy
-                    ## visualization of how noisy the resized image is after preprocessing
-                    # image_28x28 = np.array(data).reshape(28,28)
-                    # plt.imshow(image_28x28, cmap = "gray")
-                    # plt.show()
+                    # Image is saved in RGB format, save it to a numpy array representing intensity of each pixel
+                    data = np.zeros(shape = ((height*height), 1))
+                    for x in range (0, height*height):
+                        data[x] = np.mean(image_arr[x])
                     
+                    # Reshape the array to 2d array representing the screen
+                    data = data.reshape((height,height))
+
+                    # Split the individual digits on the screen
+                    digits = splitDigits (data)
+
+                    # Feed this array of individual digits to the model for predictions
+                    prediction = guessNum(digits)
+                    print ("Predicited Number: " + str(prediction))
+                    end_time = time.time()
+                    print ("Ran in " + str(end_time-start_time))
             # Draw on the screen if the mouse 1 button (left click) is pressed
             if (pygame.mouse.get_pressed()[0] == True ):
                 mouse_pos = pygame.mouse.get_pos()
@@ -87,7 +153,8 @@ pygame.display.set_caption("Draw Number")
 # Width of the stylist/pencil that the user uses to draw on the screen (tried to make the ratio of screen size
 # to pencil/stylist width as close to the original MNIST data as possible to produce the most accurate predictions
 # generally, the thinner the pencil width, the worse the predictions.
-penWidth = height // 17
+penRatio = 27
+penWidth = height // penRatio
 main()
 pygame.quit()
 
