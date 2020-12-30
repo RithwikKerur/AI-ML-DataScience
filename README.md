@@ -1,4 +1,4 @@
-# Data-Science
+# Data-Science & ML
 Data Science &amp; ML projects written in Python in Jupyter Notebooks. 
 
 HousePricing_Kaggle: small machine-learning project based on Kaggle dataset of house prices in Ames, Iowa.
